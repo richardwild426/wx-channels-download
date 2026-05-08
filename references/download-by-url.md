@@ -38,22 +38,23 @@ jq -nc --arg oid "$OID" --arg nid "$NID" '{oid:$oid, nid:$nid}'
 适用场景:**先看清晰度选项 / 元数据后再决定**,或**多条 share URL 一次入批量队列**。
 
 ```bash
-# Step A:取 share URL 详情
+# Step A:取 share URL 详情(响应嵌套两层 .data.data,见下方"字段")
 PROFILE=$(curl -fsS "$WX_SERVER/api/channels/shared_feed/profile?url=$(jq -nr --arg u "$SHARE_URL" '$u|@uri')")
 echo "$PROFILE" | jq -e '.code == 0' >/dev/null \
   || { echo "$PROFILE" | jq -r '.msg'; exit 1; }
 
 # Step B:从 profile 拼 FeedDownloadTaskBody,POST 批量
+# 注意 profile 实际数据在 .data.data.object,媒体字段都是小写驼峰:url / urlToken / decodeKey
 FEEDS=$(echo "$PROFILE" | jq '
-  .data.object as $o |
+  .data.data.object as $o |
   $o.objectDesc.media[0] as $m |
   [{
     id: $o.id,
     nonce_id: $o.objectNonceId,
-    url: ($m.URL + $m.URLToken),
+    url: ($m.url + $m.urlToken),
     title: $o.objectDesc.description,
     filename: $o.objectDesc.description,
-    key: ($m.DecodeKey | tonumber? // 0),
+    key: ($m.decodeKey | tonumber? // 0),
     spec: "",
     suffix: ".mp4"
   }]
@@ -66,7 +67,7 @@ echo "$RESP" | jq -r '.data.ids[]'
 
 ## 字段
 
-### POST `/api/task/create_channels` 请求(`ChannelsDownloadPayload`,源:`handler.go:606-614`)
+### POST `/api/task/create_channels` 请求(`ChannelsDownloadPayload`,源:`internal/api/handler.go:606-614`)
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
@@ -103,17 +104,42 @@ echo "$RESP" | jq -r '.data.ids[]'
 |---|---|---|
 | `url` | 是 | share URL |
 
-### `/api/channels/shared_feed/profile` 响应关键字段(源:`internal/api/types/types.go` `ChannelsFeedProfileResp`,2 步链路用到)
+### `/api/channels/shared_feed/profile` 响应
+
+实际响应是上游微信前端原始包装,经服务端 `result.Ok` 包一层 → **嵌套两层 `.data.data`**(源:`internal/api/types/types.go:287-316` `ChannelsFeedProfileResp`):
+
+```json
+{
+  "code": 0, "msg": "ok",
+  "data": {
+    "errCode": 0, "errMsg": "",
+    "data": {
+      "BaseResponse": {...},
+      "object": <ChannelsObject>,
+      "commentInfo": [...],
+      ...
+    },
+    "payload": {...}
+  }
+}
+```
+
+进阶链路用到的字段(`.data.data.object`,源:`types/types.go:166-173` `ChannelsObject` + `:68-79` `ChannelsMediaItem`):
 
 | 字段 | 含义 |
 |---|---|
-| `.data.object.id` | feed id(同 oid) |
-| `.data.object.objectNonceId` | feed nonce |
-| `.data.object.objectDesc.description` | 标题 |
-| `.data.object.objectDesc.media[0].URL` | media URL 主体 |
-| `.data.object.objectDesc.media[0].URLToken` | URL 签名 token,拼到 URL 后面 |
-| `.data.object.objectDesc.media[0].DecodeKey` | 解密 key(string,转 int) |
-| `.data.object.objectDesc.media[0].Spec[]` | 清晰度选项数组 |
+| `.data.data.object.id` | feed id(同 oid) |
+| `.data.data.object.objectNonceId` | feed nonce |
+| `.data.data.object.objectDesc.description` | 标题 / 描述 |
+| `.data.data.object.objectDesc.media[0].url` | media URL 主体(小写驼峰) |
+| `.data.data.object.objectDesc.media[0].urlToken` | URL 签名 token,拼到 url 后面 |
+| `.data.data.object.objectDesc.media[0].decodeKey` | 解密 key(string,转 int) |
+| `.data.data.object.objectDesc.media[0].spec[]` | 清晰度选项数组(`ChannelsMediaSpec`) |
+| `.data.data.object.objectDesc.media[0].coverUrl` | 封面 URL |
+| `.data.data.object.objectDesc.media[0].fileSize` | 字节数 |
+| `.data.data.object.contact.username/nickname/headUrl` | 创作者 |
+
+> JSON 字段名以源码 `json:"..."` 标签为准。`URL` / `URLToken` / `DecodeKey` 是 Go 字段名,**JSON 键全是小写驼峰** `url` / `urlToken` / `decodeKey`。
 
 ### 写操作响应
 

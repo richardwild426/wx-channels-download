@@ -10,29 +10,36 @@
 USERNAME="<v2_xxx@finder>"
 NEXT=""
 PAGE=0
-ALL_FEEDS="[]"
+ALL_OBJECTS="[]"
 MAX_PAGES=10           # 防止失控,根据用户需求调
 
-# Step 1:翻页拿 feed 列表
+# Step 1:翻页拿 feed 列表(响应是嵌套 .data.data.object[] 的 ChannelsObject 数组)
 while [ "$PAGE" -lt "$MAX_PAGES" ]; do
   RESP=$(curl -fsS "$WX_SERVER/api/channels/contact/feed/list?username=$(jq -nr --arg u "$USERNAME" '$u|@uri')&next_marker=$(jq -nr --arg n "$NEXT" '$n|@uri')")
   echo "$RESP" | jq -e '.code == 0' >/dev/null || { echo "$RESP" | jq -r '.msg'; exit 1; }
-  ALL_FEEDS=$(jq -n --argjson a "$ALL_FEEDS" --argjson b "$(echo "$RESP" | jq '.data.list')" '$a + $b')
-  NEXT=$(echo "$RESP" | jq -r '.data.next_marker // ""')
+  PAGE_LIST=$(echo "$RESP" | jq '.data.data.object // []')
+  ALL_OBJECTS=$(jq -n --argjson a "$ALL_OBJECTS" --argjson b "$PAGE_LIST" '$a + $b')
+  HAS_MORE=$(echo "$RESP" | jq -r '.data.data.continueFlag // 0')
+  NEXT=$(echo "$RESP" | jq -r '.data.data.lastBuffer // ""')
+  [ "$HAS_MORE" != "1" ] && break
   [ -z "$NEXT" ] && break
   PAGE=$((PAGE + 1))
 done
 
-# Step 2:转换为 FeedDownloadTaskBody,批量入队列
-FEEDS=$(echo "$ALL_FEEDS" | jq 'map({
-  id, nonce_id,
-  url,
-  title,
-  filename: .title,
-  key: (.decrypt_key | tonumber? // 0),
-  spec: "",
-  suffix: ".mp4"
-})')
+# Step 2:把 ChannelsObject 列表映射成 FeedDownloadTaskBody 后批量入队列
+# 字段都是小写驼峰:objectDesc.media[0].url / urlToken / decodeKey
+FEEDS=$(echo "$ALL_OBJECTS" | jq 'map(
+  .objectDesc.media[0] as $m | {
+    id: .id,
+    nonce_id: .objectNonceId,
+    url: ($m.url + $m.urlToken),
+    title: .objectDesc.description,
+    filename: .objectDesc.description,
+    key: ($m.decodeKey | tonumber? // 0),
+    spec: "",
+    suffix: ".mp4"
+  }
+)')
 RESP=$(curl -fsS -X POST "$WX_SERVER/api/task/create_batch" \
   -H 'Content-Type: application/json' \
   -d "$(jq -nc --argjson feeds "$FEEDS" '{feeds:$feeds}')")
@@ -41,9 +48,12 @@ echo "$RESP" | jq -r '.data.ids[]'
 
 ## 分页范式
 
-- 起始 `next_marker=""`(空字符串)
-- 每次响应的 `.data.next_marker` 直接当下次入参
-- `.data.next_marker == ""` 表示尾页,停止
+| 情况 | 字段 |
+|---|---|
+| 起始 | `next_marker=""`(空字符串) |
+| 下一页入参 | 把上一次响应的 `.data.data.lastBuffer` 当下一次 query 的 `next_marker` |
+| 是否还有下页 | `.data.data.continueFlag == 1` 表示有,`0` 表示没 |
+| 注意 | feed list 用 `lastBuffer`(末尾 r),与 search 的 `lastBuff` 字段名不同 |
 
 ## 字段
 
@@ -51,33 +61,51 @@ echo "$RESP" | jq -r '.data.ids[]'
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `username` | 是 | 创作者 username(`v2_xxx@finder`) |
-| `next_marker` | 否 | 分页游标,首页空字符串 |
+| `username` | 是 | 创作者 username(`v2_xxx@finder`);服务端会自动补 `@finder` 后缀 |
+| `next_marker` | 否 | 分页游标,首页空字符串;下一页传上次响应的 `.data.data.lastBuffer` |
 
-### 响应(源:`internal/api/types/types.go:343-366` `ChannelsFeedList` / `ChannelsFeedProfile`)
+### 响应
+
+实际响应是上游微信原始包装,经 `result.Ok` 再包一层 → **嵌套两层 `.data.data`**(源:`internal/api/types/types.go:196-247` `ChannelsFeedListOfAccountResp`):
 
 ```json
-{"code":0, "data": {"list": [<ChannelsFeedProfile>, ...], "next_marker": ""}}
+{
+  "code": 0, "msg": "ok",
+  "data": {
+    "errCode": 0, "errMsg": "",
+    "data": {
+      "BaseResponse": {...},
+      "object": [<ChannelsObject>, ...],
+      "contact": {"username":"...", "nickname":"...", ...},
+      "feedsCount": 0,
+      "continueFlag": 0,
+      "lastBuffer": "...",
+      "userTags": [...]
+    }
+  }
+}
 ```
 
-`ChannelsFeedProfile` 字段(每项):
+`ChannelsObject` 列表项字段(源:`types/types.go:166-173` + `ChannelsObjectDesc`/`ChannelsMediaItem`):
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `id` | string | feed id |
-| `nonce_id` | string | feed nonce id |
-| `source_url` | string | 视频原始 URL |
-| `url` | string | media URL(已含签名 token,可直接当 task body 的 url 用) |
-| `title` | string | 视频标题 / 描述 |
-| `decrypt_key` | string | 解密 key,字符串形式;转 task body 时 `tonumber? // 0` |
-| `cover_url` | string | 封面 URL |
-| `cover_width` / `cover_height` | int | 封面尺寸 |
-| `duration` | int | 秒 |
-| `file_size` | int | 字节 |
-| `created_at` | int | unix 秒 |
-| `contact.username` | string | 创作者 username |
-| `contact.nickname` | string | 创作者昵称 |
-| `contact.avatar_url` | string | 头像 |
+| `.id` | string | feed id(`oid`) |
+| `.objectNonceId` | string | feed nonce id |
+| `.source_url` | string | 视频原始 URL |
+| `.createtime` | int | unix 秒 |
+| `.contact.username/nickname/headUrl/signature/coverImgUrl` | — | 创作者 |
+| `.objectDesc.description` | string | 视频标题 / 描述 |
+| `.objectDesc.mediaType` | int | 媒体类型(图集/视频) |
+| `.objectDesc.media[0].url` | string | media URL 主体 |
+| `.objectDesc.media[0].urlToken` | string | URL 签名 token |
+| `.objectDesc.media[0].decodeKey` | string | 解密 key(转 int) |
+| `.objectDesc.media[0].spec[]` | array | 清晰度选项 |
+| `.objectDesc.media[0].coverUrl` | string | 封面 URL |
+| `.objectDesc.media[0].fileSize` | int | 字节数 |
+| `.objectDesc.media[0].videoPlayLen` | int | 时长(秒) |
+
+> 列表项是上游 `ChannelsObject` 原始结构,**不是**通过 `ChannelsObjectToChannelsFeedProfile` 转换后的扁平 `ChannelsFeedProfile`。要用前要按 `objectDesc.media[0]` 嵌套取字段。
 
 ### POST `/api/task/create_batch` 同 [`download-by-url.md`](download-by-url.md) 进阶链路。
 
@@ -85,9 +113,9 @@ echo "$RESP" | jq -r '.data.ids[]'
 
 | code | 典型 msg | 修法 |
 |---|---|---|
-| 400 | `missing username` / `不合法的参数` | username 没传或格式错;一般是 `v2_xxx@finder` |
-| 500 | 获取列表失败 | 微信侧拒绝;确认创作者存在,或换 NAS / 本机 |
+| 400 | `missing username` / `不合法的参数` / 上游错误描述 | username 没传或格式错;一般是 `v2_xxx@finder`(可省 `@finder` 服务端会补) |
 | 409 | `已存在该下载内容`(出现在 `task/create_batch` 内部去重) | 服务端按 `id|spec|suffix` 自动跳过,**不算错**;`.data.ids` 会比 `.feeds` 短 |
+| 反复同错 | — | 走 `+probe`,确认 channels 子系统 `available == true` |
 
 ## 链接
 
