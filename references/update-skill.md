@@ -6,7 +6,7 @@
 
 ## macOS / Linux
 
-把 GitHub 最新 `main` 克隆到临时目录,再原子替换 skill 目录。默认把 `$AGENTS_HOME/skills` 作为 canonical 安装位置(`AGENTS_HOME` 未设时为 `$HOME/.agents`),并在 Codex / Claude 两个常见运行时目录存在时同步兼容副本。
+把 GitHub 最新 `main` 克隆到临时目录,再原子替换 skill 目录。默认只安装到 `$AGENTS_HOME/skills`(`AGENTS_HOME` 未设时为 `$HOME/.agents`)。不要默认写入 `.codex/skills` 或 `.claude/skills`;如果这些专用目录已有旧副本,默认移到同级备份目录,否则 Codex / Claude 会继续把专用目录当成安装目标。
 
 ```bash
 #!/usr/bin/env bash
@@ -44,9 +44,24 @@ install_one() {
   echo "updated: $target"
 }
 
+retire_legacy_one() {
+  parent="$1"
+  [ -d "$parent" ] || return 0
+  target="$parent/$SKILL_NAME"
+  [ -e "$target" ] || [ -L "$target" ] || return 0
+  backup="$parent/.$SKILL_NAME.legacy.$(date +%Y%m%d%H%M%S)"
+  mv "$target" "$backup"
+  echo "retired legacy: $target -> $backup"
+}
+
 install_one "$AGENTS_HOME/skills" required
-install_one "$HOME/.codex/skills"
-install_one "$HOME/.claude/skills"
+if [ "${WX_SYNC_RUNTIME_SKILLS:-0}" = "1" ]; then
+  install_one "$HOME/.codex/skills"
+  install_one "$HOME/.claude/skills"
+else
+  retire_legacy_one "$HOME/.codex/skills"
+  retire_legacy_one "$HOME/.claude/skills"
+fi
 ```
 
 更新完成后,当前会话可能仍持有旧 skill 上下文。用户再次使用前,让用户开启新会话或刷新技能上下文;不要把本地仓库路径当作更新结果。
@@ -86,9 +101,23 @@ function Install-One($Parent, [bool]$Required = $false) {
   Write-Host "updated: $Target"
 }
 
+function Retire-LegacyOne($Parent) {
+  if (!(Test-Path $Parent)) { return }
+  $Target = Join-Path $Parent $SkillName
+  if (!(Test-Path $Target)) { return }
+  $Backup = Join-Path $Parent ".$SkillName.legacy.$(Get-Date -Format yyyyMMddHHmmss)"
+  Move-Item -Force $Target $Backup
+  Write-Host "retired legacy: $Target -> $Backup"
+}
+
 Install-One (Join-Path $AgentsHome "skills") $true
-Install-One (Join-Path $env:USERPROFILE ".codex\skills")
-Install-One (Join-Path $env:USERPROFILE ".claude\skills")
+if ($env:WX_SYNC_RUNTIME_SKILLS -eq "1") {
+  Install-One (Join-Path $env:USERPROFILE ".codex\skills")
+  Install-One (Join-Path $env:USERPROFILE ".claude\skills")
+} else {
+  Retire-LegacyOne (Join-Path $env:USERPROFILE ".codex\skills")
+  Retire-LegacyOne (Join-Path $env:USERPROFILE ".claude\skills")
+}
 Remove-Item -Recurse -Force $Tmp
 ```
 
@@ -97,9 +126,7 @@ Remove-Item -Recurse -Force $Tmp
 ```bash
 AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}"
 grep -n 'skill_repository: https://github.com/richardwild426/wx-channels-download' \
-  "$AGENTS_HOME/skills/wx-channels-download/SKILL.md" \
-  "$HOME/.codex/skills/wx-channels-download/SKILL.md" \
-  "$HOME/.claude/skills/wx-channels-download/SKILL.md" 2>/dev/null || true
+  "$AGENTS_HOME/skills/wx-channels-download/SKILL.md"
 ```
 
 若当前对话已经加载旧 skill,更新文件不会 retroactively 改变本轮上下文。完成更新后,开启新会话再使用最新 skill。

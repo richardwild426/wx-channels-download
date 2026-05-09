@@ -53,8 +53,8 @@
 **安装 / 更新目标(Task 8.2):**
 ```
 ~/.agents/skills/<skill-name>/   ← canonical copy,从 GitHub 最新 main 复制
-~/.codex/skills/<skill-name>/    ← compatibility mirror,父目录存在时同步
-~/.claude/skills/<skill-name>/   ← compatibility mirror,父目录存在时同步
+~/.codex/skills/<skill-name>/    ← legacy copy,默认移到备份;仅 WX_SYNC_RUNTIME_SKILLS=1 时同步
+~/.claude/skills/<skill-name>/   ← legacy copy,默认移到备份;仅 WX_SYNC_RUNTIME_SKILLS=1 时同步
 ```
 
 ---
@@ -99,7 +99,7 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.4.2"
+  version: "0.4.3"
   upstream: https://github.com/ltaoo/wx_channels_download
 allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) ... Read
 ---
@@ -1113,7 +1113,7 @@ skills-ref validate ./
 ## Task 8.2: 落地安装 / 更新
 
 **Files:**
-- 无修改源仓库;从 GitHub 最新 main 复制到 canonical skill 目录,再同步已存在的运行时兼容目录
+- 无修改源仓库;从 GitHub 最新 main 复制到 canonical skill 目录。运行时兼容目录默认不同步,已有旧副本移到同级备份目录;只有显式设置 `WX_SYNC_RUNTIME_SKILLS=1` 时同步。
 
 - [ ] **Step 1: 从 GitHub 拉取最新 skill**
 
@@ -1133,12 +1133,12 @@ test -d "$TMP/src/references"
 
 Expected: SKILL.md 存在,references 有 9 个 .md。
 
-- [ ] **Step 3: 复制到 canonical 目录和运行时兼容目录**
+- [ ] **Step 3: 复制到 canonical 目录**
 
 ```bash
 install_one ~/.agents/skills required
-install_one ~/.codex/skills optional
-install_one ~/.claude/skills optional
+# 默认 retire ~/.codex/skills 和 ~/.claude/skills 中的旧副本
+# WX_SYNC_RUNTIME_SKILLS=1 时才同步这些运行时专用目录
 ```
 
 - [ ] **Step 4: 不 commit(安装动作不进 git);开启新会话加载最新 skill**
