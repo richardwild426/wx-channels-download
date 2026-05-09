@@ -1,19 +1,19 @@
 ---
 name: wx-channels-download
-description: 下载和管理微信视频号资源的 skill,基于 wx_video_download 二进制暴露的本地 HTTP API。提供 share URL 单条下载、按创作者批量下载、搜索创作者、列 feed / 直播回放 / 已互动、查询下载任务等能力。当用户提到视频号下载、share URL、视频号批量、创作者作品、视频号搜索、下载任务、wx_video_download 时使用。需用户先启动 wx_video_download 并登录微信 PC,服务地址通过环境变量 WX_SERVER 配置。
-compatibility: Requires wx_video_download running locally (default 127.0.0.1:2022) with WeChat PC client logged in. Needs curl and jq.
+description: 下载和管理微信视频号资源的 skill,基于 wx_video_download 二进制暴露的本地 HTTP API。提供原始 wx_channels_download 二进制安装、启动、健康检查、share URL 单条下载、按创作者批量下载、搜索创作者、列 feed / 直播回放 / 已互动、查询下载任务等能力。当用户提到视频号下载、share URL、视频号批量、创作者作品、视频号搜索、下载任务、wx_video_download、wx_channels_download 安装或启动时使用。服务地址通过环境变量 WX_SERVER 配置。
+compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service (default 127.0.0.1:2022) with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   upstream: https://github.com/ltaoo/wx_channels_download
-allowed-tools: Bash(curl:*) Bash(jq:*) Read
+allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(seq:*) Bash(sleep:*) Bash(cat:*) Bash(pgrep:*) Bash(pkill:*) Bash(nohup:*) Bash(kill:*) Bash(pwsh:*) Bash(powershell:*) Read
 ---
 
 # wx-channels-download
 
 ## 1. Precondition probe(必读)
 
-任何调用之前必跑。失败立即停,read [`references/precondition-probe.md`](references/precondition-probe.md) 排错。
+任何 API 调用之前必跑。失败时按 [`references/precondition-probe.md`](references/precondition-probe.md) 分支排错;若服务未安装或未启动,分别走 [`references/install-binary.md`](references/install-binary.md) / [`references/run-binary.md`](references/run-binary.md)。
 
 ```bash
 curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" \
@@ -34,6 +34,8 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 
 | 用户场景 | 文件 |
 |---|---|
+| 安装原始 wx_channels_download 二进制 | [`references/install-binary.md`](references/install-binary.md) |
+| 启动 / 停止原始二进制服务 | [`references/run-binary.md`](references/run-binary.md) |
 | 任何调用之前 | [`references/precondition-probe.md`](references/precondition-probe.md) |
 | 下载 share URL | [`references/download-by-url.md`](references/download-by-url.md) |
 | 创作者批量 | [`references/creator-batch.md`](references/creator-batch.md) |
@@ -59,7 +61,7 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 
 | 错类 | 怎么发生 | agent 怎么做 |
 |---|---|---|
-| 网络层 | curl 自身失败(connection refused / timeout) | 跑 §1 probe;若 probe 也失败,停 |
+| 网络层 | curl 自身失败(connection refused / timeout) | 跑 §1 probe;若未安装走 `+install-binary`,若未启动走 `+run-binary` |
 | 业务错(code != 0) | API 返回的中文 msg | 原样上报用户,**不重试** |
 | 重复同错 ≥ 2 次 | 同样的请求连续失败 | 停,告诉用户,**不进入硬重试循环** |
 
@@ -70,8 +72,8 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 
 ## 6. 反模式
 
-- 不替用户启动 / 重启 wx_video_download
-- 不替用户登录 / 装证书
+- 不从非上游 release 来源安装 wx_video_download
+- 不替用户登录微信 PC / 手动安装证书 / 处理系统代理授权弹窗
 - 不在 skill 里持久化任何状态
 - 不开 WebSocket(轮询代替)
 - 不做长驻订阅

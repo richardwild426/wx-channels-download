@@ -13,8 +13,8 @@ SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
 
 # 分支 1:网络层失败(连不上)
 RESP=$(curl -fsS --max-time 5 "$SERVER/api/status" 2>&1) || {
-  echo "❌ 服务不可达 ($SERVER)。请确认 wx_video_download 已以管理员/sudo 身份启动。"
-  echo "   参考上游 README:https://github.com/ltaoo/wx_channels_download"
+  echo "❌ 服务不可达 ($SERVER)。先按 references/install-binary.md 确认可执行文件已安装,再按 references/run-binary.md 启动。"
+  echo "   上游 release:https://github.com/ltaoo/wx_channels_download/releases"
   exit 1
 }
 
@@ -54,14 +54,16 @@ echo "✓ 就绪 (wx_video_download $VERSION)"
 
 | 分支 | 触发条件 | 用户该做的 |
 |---|---|---|
-| 1 | curl 失败 / connection refused / timeout | 起 wx_video_download(管理员/sudo);确认端口未被占用 |
+| 1 | curl 失败 / connection refused / timeout | 先走 [`install-binary.md`](install-binary.md),再走 [`run-binary.md`](run-binary.md);确认端口未被占用 |
 | 2 | `code != 0` | 看上游日志(终端输出),按 `.msg` 排查;一般要重启 |
 | 3 | `available == false` | 微信 PC 登录、播放一次视频号视频后再 probe;若仍 false → 检查证书与代理是否生效;重启 wx_video_download |
 | 4 | 全部通过 | 继续后续命令 |
 
-> **不要替用户做这些动作。** 报错给出指引即可,等用户操作完再让他重新触发请求。
+> 安装和启动可按本 skill 的 `+install-binary` / `+run-binary` 执行。微信登录、证书安装、系统代理授权需要用户在本机 GUI 中完成。
 
 ## 链接
 
 - [SKILL.md §1](../SKILL.md) — 主页内联的快速 sentinel
+- [`install-binary.md`](install-binary.md) — 下载并校验上游原始 release 包
+- [`run-binary.md`](run-binary.md) — 启动 / 停止本地二进制服务
 - 任何 reference 中"反复失败"都回到这个文件

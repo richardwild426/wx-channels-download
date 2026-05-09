@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 spec(`docs/superpowers/specs/2026-05-08-wx-channels-skill-design.md`,MVP 修订版)落地为可安装的本地 skill —— 1 个 SKILL.md 主页 + **6 个** references markdown,纯 curl/jq,无独立二进制,无 scripts。**集中视频号下载与浏览,砍掉公众号 / 文件助手 / 离线解密**。
+**Goal:** 把 spec(`docs/superpowers/specs/2026-05-08-wx-channels-skill-design.md`)落地为可安装的本地 skill —— 1 个 SKILL.md 主页 + **8 个** references markdown。2026-05-09 已追加原始 `wx_channels_download` 二进制安装 / 运行封装;仍不修改上游 Go 项目。
 
-**Architecture:** 文档型 skill。**MVP 不依赖运行中的 wx_video_download 实例**,所有事实核查以上游 Go 源码(`internal/api/handler.go` / `internal/channels/client.go` / `internal/api/types/types.go`)为准。源仓库通过软链接落地到 `~/.claude/skills/<skill-name>/`(skill name 由用户改完源目录后告知,本计划内用 `wx-channels-download` 作占位)。
+**Architecture:** 文档型 skill。API reference 事实核查以上游 Go 源码为准;二进制安装 reference 以上游 GitHub release 资产命名和 checksums 为准。源仓库通过软链接落地到 `~/.claude/skills/<skill-name>/`。
 
-**Tech Stack:** Markdown(规范 frontmatter),YAML,bash + curl + jq,Claude Code skill loader。
+**Tech Stack:** Markdown(规范 frontmatter),YAML,bash + gh + curl + jq,Claude Code skill loader。
 
 **全局约束(每个 task 都遵守 spec §1):**
-- 不替用户启动 / 登录 / 装证书
+- 只从上游 release 安装 / 运行原始二进制,不替用户登录 / 装证书 / 点系统代理授权
 - 零状态,不持久化任何 SQLite / JSON / 缓存
 - 不开 WebSocket(轮询代替),不做长驻订阅
 - 不重新发明分页 / 重试 / 错误兜底
@@ -35,6 +35,8 @@
 ├── .gitignore                     # Task 0.1
 ├── SKILL.md                       # Task 1.1,~150 行
 ├── references/                    # Task 1.1 隐含创建
+│   ├── install-binary.md          # 2026-05-09 增补
+│   ├── run-binary.md              # 2026-05-09 增补
 │   ├── precondition-probe.md      # Task 2.1,~80 行
 │   ├── tasks.md                   # Task 3.1,~120 行
 │   ├── download-by-url.md         # Task 4.1,~150 行(A 优先级)
@@ -83,27 +85,27 @@ git commit -m "chore: 加 .gitignore"
 **Files:**
 - Create: `SKILL.md`
 
-按 spec §3 实现。frontmatter + 6 节正文。决策表只列 6 verb。
+按 spec §3 实现。frontmatter + 6 节正文。决策表列二进制安装 / 运行和 6 个 API verb。
 
 - [ ] **Step 1: 写 SKILL.md(完整内容)**
 
 ````markdown
 ---
 name: wx-channels-download
-description: 下载和管理微信视频号资源的 skill,基于 wx_video_download 二进制暴露的本地 HTTP API。提供 share URL 单条下载、按创作者批量下载、搜索创作者、列 feed / 直播回放 / 已互动、查询下载任务等能力。当用户提到视频号下载、share URL、视频号批量、创作者作品、视频号搜索、下载任务、wx_video_download 时使用。需用户先启动 wx_video_download 并登录微信 PC,服务地址通过环境变量 WX_SERVER 配置。
-compatibility: Requires wx_video_download running locally (default 127.0.0.1:2022) with WeChat PC client logged in. Needs curl and jq.
+description: 下载和管理微信视频号资源的 skill,基于 wx_video_download 二进制暴露的本地 HTTP API。提供原始 wx_channels_download 二进制安装、启动、健康检查、share URL 单条下载、按创作者批量下载、搜索创作者、列 feed / 直播回放 / 已互动、查询下载任务等能力。
+compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   upstream: https://github.com/ltaoo/wx_channels_download
-allowed-tools: Bash(curl:*) Bash(jq:*) Read
+allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) ... Read
 ---
 
 # wx-channels-download
 
 ## 1. Precondition probe(必读)
 
-任何调用之前必跑。失败立即停,read [`references/precondition-probe.md`](references/precondition-probe.md) 排错。
+任何 API 调用之前必跑。失败时按 [`references/precondition-probe.md`](references/precondition-probe.md) 分支排错;若服务未安装或未启动,分别走 [`references/install-binary.md`](references/install-binary.md) / [`references/run-binary.md`](references/run-binary.md)。
 
 ```bash
 curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" \
@@ -160,7 +162,7 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 
 ## 6. 反模式
 
-- 不替用户启动 / 重启 wx_video_download
+- 不从非上游 release 来源安装 wx_video_download
 - 不替用户登录 / 装证书
 - 不在 skill 里持久化任何状态
 - 不开 WebSocket(轮询代替)
@@ -197,7 +199,7 @@ grep -oE 'references/[a-z-]+\.md' SKILL.md | sort -u
 
 ```bash
 git add SKILL.md
-git commit -m "feat: 加 SKILL.md 主页(MVP 6 verb 决策表)"
+git commit -m "feat: 加 SKILL.md 主页和二进制生命周期入口"
 ```
 
 ---
@@ -1150,7 +1152,7 @@ rsync -av --delete \
 
 全部任务完成后:
 
-- [ ] SKILL.md + 6 个 references 都存在
+- [ ] SKILL.md + 8 个 references 都存在
 - [ ] `skills-ref validate ./` 通过(或手工核对通过)
 - [ ] 安装在 `~/.claude/skills/<skill-name>/`,`<skill-name>` 等于源目录名 + frontmatter `name`
 - [ ] git log 干净,所有 commit 消息中文 + 类型前缀
