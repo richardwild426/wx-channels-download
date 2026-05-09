@@ -24,9 +24,9 @@ curl -fsS "$WX_SERVER/api/channels/feed/profile?eid=$EID" | jq '.data.data.objec
 ### B. 直播回放列表
 
 ```bash
-USERNAME="<v2_xxx@finder>"
+WX_CONTACT="<v2_xxx@finder>"
 NEXT=""
-RESP=$(curl -fsS "$WX_SERVER/api/channels/live/replay/list?username=$(jq -nr --arg u "$USERNAME" '$u|@uri')&next_marker=$(jq -nr --arg n "$NEXT" '$n|@uri')")
+RESP=$(curl -fsS "$WX_SERVER/api/channels/live/replay/list?username=$(jq -nr --arg u "$WX_CONTACT" '$u|@uri')&next_marker=$(jq -nr --arg n "$NEXT" '$n|@uri')")
 echo "$RESP" | jq '.data.data.object'
 NEXT=$(echo "$RESP" | jq -r '.data.data.lastBuffer // ""')
 ```
@@ -49,6 +49,12 @@ NEXT=$(echo "$RESP" | jq -r '.data.data.lastBuffer // ""')
 | 下一页入参 | `.data.data.lastBuffer` 当下次 query 的 `next_marker` |
 | 是否还有下页 | `.data.data.continueFlag == 1` |
 | 列表项 | `.data.data.object[]`(`ChannelsObject` 数组,字段同 [`creator-batch.md`](creator-batch.md)) |
+
+如果用户要“最新 N 条”或按展示序号选择,先按发布时间降序展示:
+
+```jq
+.data.data.object | sort_by(.createtime // 0) | reverse
+```
 
 ## 字段
 

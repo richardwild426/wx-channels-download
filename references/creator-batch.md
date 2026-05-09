@@ -7,7 +7,7 @@
 ## 完整链路(2 步)
 
 ```bash
-USERNAME="<v2_xxx@finder>"
+WX_CONTACT="<v2_xxx@finder>"
 NEXT=""
 PAGE=0
 ALL_OBJECTS="[]"
@@ -15,7 +15,7 @@ MAX_PAGES=10           # 防止失控,根据用户需求调
 
 # Step 1:翻页拿 feed 列表(响应是嵌套 .data.data.object[] 的 ChannelsObject 数组)
 while [ "$PAGE" -lt "$MAX_PAGES" ]; do
-  RESP=$(curl -fsS "$WX_SERVER/api/channels/contact/feed/list?username=$(jq -nr --arg u "$USERNAME" '$u|@uri')&next_marker=$(jq -nr --arg n "$NEXT" '$n|@uri')")
+  RESP=$(curl -fsS "$WX_SERVER/api/channels/contact/feed/list?username=$(jq -nr --arg u "$WX_CONTACT" '$u|@uri')&next_marker=$(jq -nr --arg n "$NEXT" '$n|@uri')")
   echo "$RESP" | jq -e '.code == 0' >/dev/null || { echo "$RESP" | jq -r '.msg'; exit 1; }
   PAGE_LIST=$(echo "$RESP" | jq '.data.data.object // []')
   ALL_OBJECTS=$(jq -n --argjson a "$ALL_OBJECTS" --argjson b "$PAGE_LIST" '$a + $b')
@@ -25,6 +25,9 @@ while [ "$PAGE" -lt "$MAX_PAGES" ]; do
   [ -z "$NEXT" ] && break
   PAGE=$((PAGE + 1))
 done
+
+# If the user asks for "latest" or picks by displayed index, normalize order first.
+ALL_OBJECTS=$(echo "$ALL_OBJECTS" | jq 'sort_by(.createtime // 0) | reverse')
 
 # Step 2:把 ChannelsObject 列表映射成 FeedDownloadTaskBody 后批量入队列
 # 字段都是小写驼峰:objectDesc.media[0].url / urlToken / decodeKey

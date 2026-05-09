@@ -47,9 +47,9 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 
 ## 4. 通用范式
 
-- **分页**:`next_marker`。各 list 类 API 都返回 `.data.next_marker`,空字符串表示尾页。把上一次 `next_marker` 当下一次入参传回。
+- **分页**:`next_marker`。不同 API 的游标字段名不完全一致;按对应 reference 读取 `lastBuff` / `lastBuffer`,空字符串表示尾页。
 - **重试**:不重新发明。API 自带语义,失败原样上报。
-- **进度查询**:轮询 `/api/task/profile?id=<task_id>`,2~5s 间隔。状态字段见 [`references/tasks.md`](references/tasks.md)。
+- **进度查询**:轮询 `/api/task/list?status=all&page=1&page_size=200` 后按 `id` 过滤,2~5s 间隔。状态字段见 [`references/tasks.md`](references/tasks.md)。
 - **状态零持久化**:skill 不维护任何 sqlite / json。需要状态由 agent 用 TodoWrite 自管。
 
 ## 5. 全局错误处理
