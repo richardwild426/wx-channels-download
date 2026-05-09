@@ -1,113 +1,112 @@
-# +run-binary(运行原始二进制)
+# +run-binary(连接 / 运行原始二进制)
 
-> **场景:** 已安装 `wx_video_download`,需要启动 / 停止 / 重启本地 HTTP 服务,或 probe 报 connection refused。
+> **场景:** 已安装 `wx_video_download`,需要让 skill 连接到用户手动验证正常的实例,或需要说明如何人工启动本地 HTTP + 代理服务。
 >
-> **前置:** 已按 [`install-binary.md`](install-binary.md) 安装;微信 PC 客户端已登录。macOS / Linux 默认通过 `nohup` 后台运行;Windows 默认用 PowerShell `Start-Process`。
+> **前置:** 已按 [`install-binary.md`](install-binary.md) 安装;微信 PC 客户端已登录。
 
-## macOS / Linux 启动
+## 结论先行
 
-必须在安装目录运行,因为 release 包内的 `config.yaml` 与二进制同级。默认安装目录是 `$HOME/.local/opt/wx_video_download`。
+不要让 agent 在非交互 shell 里用 `nohup ... &` 为一次操作临时启动下载器。原因有两个:
+
+- Codex / agent 执行环境可能在命令返回后清理后台子进程,导致服务看起来启动过但随即消失。
+- 上游 `/api/status` 的 `channels.available` 取决于是否有视频号页面通过 WebSocket 连到这个实例。新启动的实例通常没有这个连接,即使 API 和代理端口都启动成功也不能搜索 / 下载。
+
+正确流程是:连接用户已经手动验证 `channels.available == true` 的实例。
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-INSTALL_DIR="${WX_BINARY_DIR:-$HOME/.local/opt/wx_video_download}"
 SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
-LOG="${WX_LOG:-$INSTALL_DIR/wx_video_download.log}"
-PID_FILE="${WX_PID_FILE:-$INSTALL_DIR/wx_video_download.pid}"
-
-if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
-  echo "already running: $SERVER"
-  exit 0
-fi
-
-if [ ! -x "$INSTALL_DIR/wx_video_download" ]; then
-  echo "missing binary: $INSTALL_DIR/wx_video_download" >&2
-  echo "run +install-binary first" >&2
-  exit 1
-fi
-
-cd "$INSTALL_DIR"
-nohup "$INSTALL_DIR/wx_video_download" >"$LOG" 2>&1 &
-echo $! > "$PID_FILE"
-
-for _ in $(seq 1 20); do
-  if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
-    echo "started: $SERVER"
-    exit 0
-  fi
-  sleep 1
-done
-
-echo "started process but API is not ready; log: $LOG" >&2
-exit 2
+curl -fsS "$SERVER/api/status" | jq -e '.code == 0 and .data.channels.available == true'
 ```
 
-启动后继续跑 [`precondition-probe.md`](precondition-probe.md)。如果 probe 返回 `channels.available == false`,服务已经起来,问题在微信登录、证书或代理链路,不是安装问题。若系统要求管理员权限才能安装证书或接管代理,保留当前安装目录,改用管理员终端在同一目录启动原始二进制。
+如果用户手动正常的程序不在默认端口,设置真实地址:
 
-## macOS / Linux 停止
+```bash
+PORT="2022"
+export WX_SERVER="http://127.0.0.1:$PORT"
+```
+
+如果用户手动正常的程序在另一份目录,记录真实目录,后续排错用同一份配置:
+
+```bash
+export WX_BINARY_DIR=/path/to/working/wx_video_download_dir
+```
+
+## macOS / Linux 人工前台启动
+
+必须在安装目录运行,因为 release 包内的 `config.yaml` 与二进制同级。默认安装目录是 `$HOME/.local/opt/wx_video_download`。该命令应由用户在自己的终端前台运行,保持窗口打开。
 
 ```bash
 INSTALL_DIR="${WX_BINARY_DIR:-$HOME/.local/opt/wx_video_download}"
-PID_FILE="${WX_PID_FILE:-$INSTALL_DIR/wx_video_download.pid}"
-
-if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-  kill "$(cat "$PID_FILE")"
-  rm -f "$PID_FILE"
-  echo "stopped"
-else
-  pgrep -f "wx_video_download" >/dev/null && pkill -f "wx_video_download" || true
-  echo "no pid file process"
-fi
+cd "$INSTALL_DIR"
+./wx_video_download
 ```
 
-## Windows PowerShell 启动
-
-Windows 上通常需要以管理员权限运行,否则证书 / 代理相关能力可能无法生效。
-
-```powershell
-$ErrorActionPreference = "Stop"
-
-$InstallDir = if ($env:WX_BINARY_DIR) { $env:WX_BINARY_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\wx_video_download" }
-$Server = if ($env:WX_SERVER) { $env:WX_SERVER } else { "http://127.0.0.1:2022" }
-$Exe = Join-Path $InstallDir "wx_video_download.exe"
-$Log = Join-Path $InstallDir "wx_video_download.log"
-$ErrLog = Join-Path $InstallDir "wx_video_download.err.log"
-
-try {
-  Invoke-RestMethod -Uri "$Server/api/status" -TimeoutSec 2 | Out-Null
-  Write-Host "already running: $Server"
-  exit 0
-} catch {}
-
-if (!(Test-Path $Exe)) { throw "missing binary: $Exe; run +install-binary first" }
-
-Start-Process -FilePath $Exe -WorkingDirectory $InstallDir -RedirectStandardOutput $Log -RedirectStandardError $ErrLog
-
-for ($i = 0; $i -lt 20; $i++) {
-  try {
-    Invoke-RestMethod -Uri "$Server/api/status" -TimeoutSec 2 | Out-Null
-    Write-Host "started: $Server"
-    exit 0
-  } catch {
-    Start-Sleep -Seconds 1
-  }
-}
-
-throw "started process but API is not ready; log: $Log; err: $ErrLog"
-```
-
-## Windows PowerShell 停止
-
-```powershell
-Get-Process wx_video_download -ErrorAction SilentlyContinue | Stop-Process
-```
-
-## 运行后检查
+启动后在另一个终端验证:
 
 ```bash
 curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" | jq .
 ```
 
-`code == 0` 只表示服务自身可访问。下载前仍要通过 SKILL.md §1 的 `channels.available == true` 检查。
+必须看到 `.data.channels.available == true` 后,skill 才能调用搜索 / 下载 API。
+
+## macOS / Linux 停止
+
+前台运行时用 `Ctrl+C` 停止。不要用 agent 随意 `pkill`,避免误杀用户正在验证的实例。
+
+## Windows PowerShell 人工前台启动
+
+Windows 上通常需要以管理员权限运行,否则证书 / 代理相关能力可能无法生效。
+
+```powershell
+$InstallDir = if ($env:WX_BINARY_DIR) { $env:WX_BINARY_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\wx_video_download" }
+Set-Location $InstallDir
+.\wx_video_download.exe
+```
+
+## 实例不一致的典型现象
+
+### 1. skill 看到 connection refused
+
+```bash
+curl -fsS http://127.0.0.1:2022/api/status
+# curl: (7) Failed to connect
+```
+
+说明 skill 没连到用户手动启动的那个 API。确认手动实例端口,并设置 `WX_SERVER`。
+
+### 2. skill 启动的实例 API 可达但 `available == false`
+
+```json
+{
+  "code": 0,
+  "data": {
+    "channels": {
+      "available": false
+    }
+  }
+}
+```
+
+说明 API 进程存在,但没有视频号前端 WebSocket 客户端连接。常见原因是 skill 另起了一份安装目录 / 配置 / 代理实例,微信 PC 的视频号页面仍连着用户手动验证的旧实例,或没有重新经过当前代理打开。
+
+## 运行后检查
+
+```bash
+SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
+curl -fsS "$SERVER/api/status" | jq .
+```
+
+成功标准:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "channels": {
+      "available": true
+    }
+  }
+}
+```
+
+`code == 0` 只表示服务自身可访问。下载前仍要通过 `channels.available == true` 检查。

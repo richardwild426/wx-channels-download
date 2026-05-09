@@ -6,14 +6,14 @@ license: MIT
 metadata:
   version: "0.2.0"
   upstream: https://github.com/ltaoo/wx_channels_download
-allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(seq:*) Bash(sleep:*) Bash(cat:*) Bash(pgrep:*) Bash(pkill:*) Bash(nohup:*) Bash(kill:*) Bash(pwsh:*) Bash(powershell:*) Read
+allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(pwsh:*) Bash(powershell:*) Read
 ---
 
 # wx-channels-download
 
 ## 1. Precondition probe(必读)
 
-任何 API 调用之前必跑。失败时按 [`references/precondition-probe.md`](references/precondition-probe.md) 分支排错;若服务未安装或未启动,分别走 [`references/install-binary.md`](references/install-binary.md) / [`references/run-binary.md`](references/run-binary.md)。
+任何 API 调用之前必跑。优先连接用户已经手动验证正常的运行实例,不要为了执行下载 / 搜索 API 临时另起一个实例。失败时按 [`references/precondition-probe.md`](references/precondition-probe.md) 分支排错;若服务未安装才走 [`references/install-binary.md`](references/install-binary.md),若需要人工启动则走 [`references/run-binary.md`](references/run-binary.md)。
 
 ```bash
 curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" \
@@ -23,7 +23,7 @@ curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" \
 
 ## 2. 服务地址
 
-`WX_SERVER` 环境变量,默认 `http://127.0.0.1:2022`。本机 / NAS 共用同一份 skill,改 env 即切。
+`WX_SERVER` 环境变量,默认 `http://127.0.0.1:2022`。它必须指向那个已经有微信视频号前端 WebSocket 连接的实例。`channels.available == true` 才能搜索 / 下载;单纯 API 服务启动成功不够。
 
 ```bash
 export WX_SERVER=http://127.0.0.1:2022          # 本机
@@ -73,6 +73,7 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 ## 6. 反模式
 
 - 不从非上游 release 来源安装 wx_video_download
+- 不为了一次 API 调用临时后台启动新实例;新实例通常没有微信视频号前端 WebSocket 连接
 - 不替用户登录微信 PC / 手动安装证书 / 处理系统代理授权弹窗
 - 不在 skill 里持久化任何状态
 - 不开 WebSocket(轮询代替)

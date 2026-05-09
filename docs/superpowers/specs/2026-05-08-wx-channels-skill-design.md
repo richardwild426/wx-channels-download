@@ -33,7 +33,7 @@ skill 不做以下事情:
 | # | 边界 | 处理方式 |
 |---|---|---|
 | 1 | 只从上游 release 安装 `wx_video_download` | `+install-binary` 使用 `gh release download` + checksums |
-| 2 | 可启动 / 停止本地二进制服务 | `+run-binary` 后必须再跑 precondition probe |
+| 2 | 连接 / 人工启动本地二进制服务 | 优先连接用户已手动验证 `channels.available == true` 的实例 |
 | 3 | 不替用户登录微信 / 装证书 / 点系统代理授权 | 这些动作需要用户在 GUI 完成 |
 | 4 | 零状态零持久化 | 只有 SKILL.md + references;状态由 agent 用 TodoWrite 自管 |
 | 5 | 不做长驻订阅 | YAGNI |
@@ -319,7 +319,7 @@ HTTP 非 200 只在网络层(connection refused / timeout / 502)出现。
 |---|---|---|---|
 | 1 | curl 失败(connection refused / timeout) | "服务不可达 ($WX_SERVER)" | 先走 `+install-binary`,再走 `+run-binary`;确认端口未被占用 |
 | 2 | code != 0 | "服务异常: $msg" | 看上游日志,可能要重启 |
-| 3 | code == 0 但 data.channels.available == false | "视频号客户端未连接" | 确认微信 PC 已登录,可能需要重启 wx_video_download |
+| 3 | code == 0 但 data.channels.available == false | "视频号客户端未连接" | 当前实例没有视频号前端 WebSocket 客户端;确认 skill 连到用户手动验证正常的实例 |
 | 4 | code == 0 且 channels.available == true | "✓ 就绪 (version: ...)" | 继续后续命令 |
 
 reference 内提供完整 bash 脚本(每分支独立 echo + exit 不同非 0 码),agent 排错时打开按需读取。
