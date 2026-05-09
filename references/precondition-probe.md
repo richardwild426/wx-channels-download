@@ -18,7 +18,7 @@ SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
 # 分支 1:网络层失败(连不上)
 RESP=$(curl -fsS --max-time 5 "$SERVER/api/status" 2>&1) || {
   echo "❌ 服务不可达 ($SERVER)。智能体应先安装或启动 wx_video_download,不要让用户执行 CLI。"
-  echo "   下一步: references/install-binary.md 或 references/run-binary.md"
+  echo "   下一步由智能体执行: 安装缺失二进制或启动本地服务。"
   exit 1
 }
 

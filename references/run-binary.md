@@ -183,7 +183,30 @@ exit 2
 
 > 我已经启动下载器服务。现在需要你在微信 PC 登录账号,按系统提示允许证书 / 代理授权,然后打开或刷新任意视频号页面。完成后告诉我"好了",我会继续搜索 / 下载。
 
-用户回复后重新跑 probe。probe 通过后继续原始任务。
+在 macOS 上,智能体先主动打开微信和本地代理页,降低用户寻找入口的成本:
+
+```bash
+open -a WeChat >/dev/null 2>&1 || open -a 微信 >/dev/null 2>&1 || true
+open "http://127.0.0.1:2023" >/dev/null 2>&1 || true
+```
+
+用户回复后由智能体轮询等待,不要让用户执行验证命令:
+
+```bash
+SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  if curl -fsS --max-time 2 "$SERVER/api/status" \
+    | jq -e '.code == 0 and .data.channels.available == true' >/dev/null; then
+    echo "channels ready"
+    exit 0
+  fi
+  sleep 2
+done
+echo "channels still unavailable" >&2
+exit 3
+```
+
+probe 通过后继续原始任务。
 
 ## 成功标准
 
