@@ -1,112 +1,195 @@
-# +run-binary(连接 / 运行原始二进制)
+# +run-binary(自动启动 / 连接原始二进制)
 
-> **场景:** 已安装 `wx_video_download`,需要让 skill 连接到用户手动验证正常的实例,或需要说明如何人工启动本地 HTTP + 代理服务。
+> **场景:** 用户通过对话要求搜索作者、列作品、单条下载或批量下载,但本地 `wx_video_download` 服务未就绪。
 >
-> **前置:** 已按 [`install-binary.md`](install-binary.md) 安装;微信 PC 客户端已登录。
+> **原则:** 智能体负责安装、启动、探测、重连和调用 API。不要让用户执行 CLI。只有微信登录、系统证书 / 代理授权、打开或刷新视频号页面这些 GUI 动作需要用户处理。
 
-## 结论先行
+## 会话入口
 
-不要让 agent 在非交互 shell 里用 `nohup ... &` 为一次操作临时启动下载器。原因有两个:
+用户说"搜视频号作者"、"列作品"、"下载这个视频号"、"批量下载某作者"时,按这个顺序自动执行:
 
-- Codex / agent 执行环境可能在命令返回后清理后台子进程,导致服务看起来启动过但随即消失。
-- 上游 `/api/status` 的 `channels.available` 取决于是否有视频号页面通过 WebSocket 连到这个实例。新启动的实例通常没有这个连接,即使 API 和代理端口都启动成功也不能搜索 / 下载。
+1. 跑 [`precondition-probe.md`](precondition-probe.md)。
+2. 如果二进制缺失,先跑 [`install-binary.md`](install-binary.md)。
+3. 如果 API 不可达,按本文启动原始二进制服务。
+4. 如果 API 可达但 `channels.available == false`,提示用户完成 GUI 动作:登录微信 PC,同意证书 / 代理授权,打开或刷新任意视频号页面。
+5. probe 通过后继续用户原始任务:搜索作者、列作品、下载或批量下载。
 
-正确流程是:连接用户已经手动验证 `channels.available == true` 的实例。
+## macOS: 用 launchctl 托管
+
+不要用 `nohup ... &`。在 Codex / agent 执行环境中,后台子进程可能在命令返回后被清理。macOS 使用用户级 LaunchAgent 托管进程。
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="${WX_BINARY_DIR:-$HOME/.local/opt/wx_video_download}"
+BIN="$INSTALL_DIR/wx_video_download"
+SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
+LABEL="com.wx-channels-download.agent"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG="$INSTALL_DIR/wx_video_download.launchd.log"
+ERR="$INSTALL_DIR/wx_video_download.launchd.err.log"
+
+if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
+  echo "service already reachable: $SERVER"
+  exit 0
+fi
+
+if [ ! -x "$BIN" ]; then
+  echo "missing binary: $BIN" >&2
+  echo "run +install-binary first" >&2
+  exit 1
+fi
+
+mkdir -p "$HOME/Library/LaunchAgents" "$INSTALL_DIR"
+cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$BIN</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$INSTALL_DIR</string>
+  <key>StandardOutPath</key>
+  <string>$LOG</string>
+  <key>StandardErrorPath</key>
+  <string>$ERR</string>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+EOF
+
+UID_VALUE="$(id -u)"
+launchctl bootout "gui/$UID_VALUE/$LABEL" >/dev/null 2>&1 || true
+launchctl bootstrap "gui/$UID_VALUE" "$PLIST"
+launchctl kickstart -k "gui/$UID_VALUE/$LABEL"
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
+    echo "service started: $SERVER"
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "service process started but API is not reachable yet; log: $LOG; err: $ERR" >&2
+exit 2
+```
+
+停止服务时由智能体执行:
+
+```bash
+LABEL="com.wx-channels-download.agent"
+UID_VALUE="$(id -u)"
+launchctl bootout "gui/$UID_VALUE/$LABEL" >/dev/null 2>&1 || true
+```
+
+## Windows: 用 PowerShell 启动
+
+Windows 上可能需要管理员权限弹窗。智能体可以发起启动;用户只处理权限弹窗。
+
+```powershell
+$ErrorActionPreference = "Stop"
+$InstallDir = if ($env:WX_BINARY_DIR) { $env:WX_BINARY_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\wx_video_download" }
+$Server = if ($env:WX_SERVER) { $env:WX_SERVER } else { "http://127.0.0.1:2022" }
+$Exe = Join-Path $InstallDir "wx_video_download.exe"
+
+try {
+  Invoke-RestMethod -Uri "$Server/api/status" -TimeoutSec 2 | Out-Null
+  Write-Host "service already reachable: $Server"
+  exit 0
+} catch {}
+
+if (!(Test-Path $Exe)) { throw "missing binary: $Exe; run +install-binary first" }
+
+Start-Process -FilePath $Exe -WorkingDirectory $InstallDir
+
+for ($i = 0; $i -lt 10; $i++) {
+  try {
+    Invoke-RestMethod -Uri "$Server/api/status" -TimeoutSec 2 | Out-Null
+    Write-Host "service started: $Server"
+    exit 0
+  } catch {
+    Start-Sleep -Seconds 1
+  }
+}
+
+throw "service process started but API is not reachable yet"
+```
+
+## Linux: 用 systemd 用户服务
+
+Linux 用户环境优先使用 systemd user service。无 systemd 的环境不能可靠托管长期进程;此时只提示用户需要保留程序窗口,不要输出 CLI 命令。
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="${WX_BINARY_DIR:-$HOME/.local/opt/wx_video_download}"
+BIN="$INSTALL_DIR/wx_video_download"
+SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
+UNIT_DIR="$HOME/.config/systemd/user"
+UNIT="$UNIT_DIR/wx-video-download.service"
+
+if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
+  echo "service already reachable: $SERVER"
+  exit 0
+fi
+
+if [ ! -x "$BIN" ]; then
+  echo "missing binary: $BIN" >&2
+  echo "run +install-binary first" >&2
+  exit 1
+fi
+
+mkdir -p "$UNIT_DIR"
+cat > "$UNIT" <<EOF
+[Unit]
+Description=wx_video_download
+
+[Service]
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$BIN
+Restart=no
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user restart wx-video-download.service
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
+    echo "service started: $SERVER"
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "service process started but API is not reachable yet" >&2
+exit 2
+```
+
+## GUI 介入点
+
+如果服务可达但 `channels.available == false`,不要把 curl 命令给用户。给用户一句明确动作:
+
+> 我已经启动下载器服务。现在需要你在微信 PC 登录账号,按系统提示允许证书 / 代理授权,然后打开或刷新任意视频号页面。完成后告诉我"好了",我会继续搜索 / 下载。
+
+用户回复后重新跑 probe。probe 通过后继续原始任务。
+
+## 成功标准
 
 ```bash
 SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
 curl -fsS "$SERVER/api/status" | jq -e '.code == 0 and .data.channels.available == true'
 ```
 
-如果用户手动正常的程序不在默认端口,设置真实地址:
-
-```bash
-PORT="2022"
-export WX_SERVER="http://127.0.0.1:$PORT"
-```
-
-如果用户手动正常的程序在另一份目录,记录真实目录,后续排错用同一份配置:
-
-```bash
-export WX_BINARY_DIR=/path/to/working/wx_video_download_dir
-```
-
-## macOS / Linux 人工前台启动
-
-必须在安装目录运行,因为 release 包内的 `config.yaml` 与二进制同级。默认安装目录是 `$HOME/.local/opt/wx_video_download`。该命令应由用户在自己的终端前台运行,保持窗口打开。
-
-```bash
-INSTALL_DIR="${WX_BINARY_DIR:-$HOME/.local/opt/wx_video_download}"
-cd "$INSTALL_DIR"
-./wx_video_download
-```
-
-启动后在另一个终端验证:
-
-```bash
-curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" | jq .
-```
-
-必须看到 `.data.channels.available == true` 后,skill 才能调用搜索 / 下载 API。
-
-## macOS / Linux 停止
-
-前台运行时用 `Ctrl+C` 停止。不要用 agent 随意 `pkill`,避免误杀用户正在验证的实例。
-
-## Windows PowerShell 人工前台启动
-
-Windows 上通常需要以管理员权限运行,否则证书 / 代理相关能力可能无法生效。
-
-```powershell
-$InstallDir = if ($env:WX_BINARY_DIR) { $env:WX_BINARY_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\wx_video_download" }
-Set-Location $InstallDir
-.\wx_video_download.exe
-```
-
-## 实例不一致的典型现象
-
-### 1. skill 看到 connection refused
-
-```bash
-curl -fsS http://127.0.0.1:2022/api/status
-# curl: (7) Failed to connect
-```
-
-说明 skill 没连到用户手动启动的那个 API。确认手动实例端口,并设置 `WX_SERVER`。
-
-### 2. skill 启动的实例 API 可达但 `available == false`
-
-```json
-{
-  "code": 0,
-  "data": {
-    "channels": {
-      "available": false
-    }
-  }
-}
-```
-
-说明 API 进程存在,但没有视频号前端 WebSocket 客户端连接。常见原因是 skill 另起了一份安装目录 / 配置 / 代理实例,微信 PC 的视频号页面仍连着用户手动验证的旧实例,或没有重新经过当前代理打开。
-
-## 运行后检查
-
-```bash
-SERVER="${WX_SERVER:-http://127.0.0.1:2022}"
-curl -fsS "$SERVER/api/status" | jq .
-```
-
-成功标准:
-
-```json
-{
-  "code": 0,
-  "data": {
-    "channels": {
-      "available": true
-    }
-  }
-}
-```
-
-`code == 0` 只表示服务自身可访问。下载前仍要通过 `channels.available == true` 检查。
+只要这个检查通过,后续的作者搜索、作品列表、单条下载、批量下载都由智能体继续执行。

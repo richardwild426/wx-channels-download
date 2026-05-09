@@ -274,7 +274,7 @@ echo "✓ 就绪 (wx_video_download $VERSION)"
 |---|---|---|
 | 1 | curl 失败 / connection refused / timeout | 起 wx_video_download(管理员/sudo);确认端口未被占用 |
 | 2 | `code != 0` | 看上游日志(终端输出),按 `.msg` 排查;一般要重启 |
-| 3 | `available == false` | 当前 API 实例没有视频号前端 WebSocket 客户端;确认 `WX_SERVER` 指向用户手动验证正常的实例 |
+| 3 | `available == false` | 智能体已启动服务;提示用户完成微信登录、证书 / 代理授权、打开或刷新视频号页面 |
 | 4 | 全部通过 | 继续后续命令 |
 
 > **不要替用户做这些动作。** 报错给出指引即可,等用户操作完再让他重新触发请求。

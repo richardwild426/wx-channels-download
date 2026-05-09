@@ -4,16 +4,16 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service (default 127.0.0.1:2022) with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   upstream: https://github.com/ltaoo/wx_channels_download
-allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(pwsh:*) Bash(powershell:*) Read
+allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(id:*) Bash(cat:*) Bash(sleep:*) Bash(launchctl:*) Bash(systemctl:*) Bash(open:*) Bash(pwsh:*) Bash(powershell:*) Read
 ---
 
 # wx-channels-download
 
 ## 1. Precondition probe(必读)
 
-任何 API 调用之前必跑。优先连接用户已经手动验证正常的运行实例,不要为了执行下载 / 搜索 API 临时另起一个实例。失败时按 [`references/precondition-probe.md`](references/precondition-probe.md) 分支排错;若服务未安装才走 [`references/install-binary.md`](references/install-binary.md),若需要人工启动则走 [`references/run-binary.md`](references/run-binary.md)。
+任何 API 调用之前必跑。失败时智能体自己处理安装 / 启动 / 重连,不要把 CLI 命令交给用户。只有微信登录、系统证书 / 代理授权、打开或刷新视频号页面这些 GUI 动作需要用户介入。失败分支见 [`references/precondition-probe.md`](references/precondition-probe.md);启动服务见 [`references/run-binary.md`](references/run-binary.md)。
 
 ```bash
 curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" \
@@ -23,7 +23,7 @@ curl -fsS "${WX_SERVER:-http://127.0.0.1:2022}/api/status" \
 
 ## 2. 服务地址
 
-`WX_SERVER` 环境变量,默认 `http://127.0.0.1:2022`。它必须指向那个已经有微信视频号前端 WebSocket 连接的实例。`channels.available == true` 才能搜索 / 下载;单纯 API 服务启动成功不够。
+`WX_SERVER` 环境变量,默认 `http://127.0.0.1:2022`。智能体默认使用这个地址并自动探测。`channels.available == true` 才能搜索 / 下载;单纯 API 服务启动成功不够。
 
 ```bash
 export WX_SERVER=http://127.0.0.1:2022          # 本机
@@ -73,7 +73,8 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 ## 6. 反模式
 
 - 不从非上游 release 来源安装 wx_video_download
-- 不为了一次 API 调用临时后台启动新实例;新实例通常没有微信视频号前端 WebSocket 连接
+- 不把安装、启动、端口探测、curl、jq 这些 CLI 细节交给用户
+- 不用 `nohup ... &` 这种会被 agent 执行环境清理的方式启动长期服务
 - 不替用户登录微信 PC / 手动安装证书 / 处理系统代理授权弹窗
 - 不在 skill 里持久化任何状态
 - 不开 WebSocket(轮询代替)
