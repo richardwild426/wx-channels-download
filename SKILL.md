@@ -1,12 +1,13 @@
 ---
 name: wx-channels-download
-description: 下载和管理微信视频号资源的 skill,基于 wx_video_download 二进制暴露的本地 HTTP API。提供原始 wx_channels_download 二进制安装、启动、健康检查、share URL 单条下载、按创作者批量下载、搜索创作者、列 feed / 直播回放 / 已互动、查询下载任务等能力。当用户提到视频号下载、share URL、视频号批量、创作者作品、视频号搜索、下载任务、wx_video_download、wx_channels_download 安装或启动时使用。服务地址通过环境变量 WX_SERVER 配置。
+description: 下载和管理微信视频号资源的 skill,基于 wx_video_download 二进制暴露的本地 HTTP API。提供本 skill 从 GitHub 更新、原始 wx_channels_download 二进制安装、启动、健康检查、share URL 单条下载、按创作者批量下载、搜索创作者、列 feed / 直播回放 / 已互动、查询下载任务等能力。当用户提到视频号下载、share URL、视频号批量、创作者作品、视频号搜索、下载任务、wx_video_download、wx_channels_download 安装或启动、更新此 skill 时使用。服务地址通过环境变量 WX_SERVER 配置。
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service (default 127.0.0.1:2022) with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   upstream: https://github.com/ltaoo/wx_channels_download
-allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(id:*) Bash(cat:*) Bash(sleep:*) Bash(launchctl:*) Bash(systemctl:*) Bash(open:*) Bash(pwsh:*) Bash(powershell:*) Read
+  skill_repository: https://github.com/richardwild426/wx-channels-download
+allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(mv:*) Bash(date:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(id:*) Bash(cat:*) Bash(sleep:*) Bash(launchctl:*) Bash(systemctl:*) Bash(open:*) Bash(pwsh:*) Bash(powershell:*) Read
 ---
 
 # wx-channels-download
@@ -34,6 +35,7 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 
 | 用户场景 | 文件 |
 |---|---|
+| 更新本 skill | [`references/update-skill.md`](references/update-skill.md) |
 | 安装原始 wx_channels_download 二进制 | [`references/install-binary.md`](references/install-binary.md) |
 | 启动 / 停止原始二进制服务 | [`references/run-binary.md`](references/run-binary.md) |
 | 任何调用之前 | [`references/precondition-probe.md`](references/precondition-probe.md) |
@@ -73,6 +75,7 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 ## 6. 反模式
 
 - 不从非上游 release 来源安装 wx_video_download
+- 不从本地工作区更新 skill;用户要求更新 skill 时,始终从 `metadata.skill_repository` 的 GitHub 仓库拉取
 - 不把安装、启动、端口探测、curl、jq 这些 CLI 细节交给用户
 - 不用 `nohup ... &` 这种会被 agent 执行环境清理的方式启动长期服务
 - 不替用户登录微信 PC / 手动安装证书 / 处理系统代理授权弹窗

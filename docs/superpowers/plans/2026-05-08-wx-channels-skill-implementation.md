@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 spec(`docs/superpowers/specs/2026-05-08-wx-channels-skill-design.md`)落地为可安装的本地 skill —— 1 个 SKILL.md 主页 + **8 个** references markdown。2026-05-09 已追加原始 `wx_channels_download` 二进制安装 / 运行封装;仍不修改上游 Go 项目。
+**Goal:** 把 spec(`docs/superpowers/specs/2026-05-08-wx-channels-skill-design.md`)落地为可安装的本地 skill —— 1 个 SKILL.md 主页 + **9 个** references markdown。2026-05-09 已追加从 GitHub 更新 skill、原始 `wx_channels_download` 二进制安装 / 运行封装;仍不修改上游 Go 项目。
 
-**Architecture:** 文档型 skill。API reference 事实核查以上游 Go 源码为准;二进制安装 reference 以上游 GitHub release 资产命名和 checksums 为准。源仓库通过软链接落地到 `~/.claude/skills/<skill-name>/`。
+**Architecture:** 文档型 skill。API reference 事实核查以上游 Go 源码为准;二进制安装 reference 以上游 GitHub release 资产命名和 checksums 为准。用户要求更新 skill 时,始终从 GitHub 仓库 `richardwild426/wx-channels-download` 拉取,不从本地工作区或软链接目标同步。
 
 **Tech Stack:** Markdown(规范 frontmatter),YAML,bash + gh + curl + jq,Claude Code skill loader。
 
@@ -49,9 +49,10 @@
         └── plans/2026-05-08-wx-channels-skill-implementation.md  # 本文件
 ```
 
-**安装目标(Task 8.2):**
+**安装 / 更新目标(Task 8.2):**
 ```
-~/.claude/skills/<skill-name>/   ← 软链接到本仓库
+~/.codex/skills/<skill-name>/    ← 从 GitHub 最新 main 复制
+~/.claude/skills/<skill-name>/   ← 从 GitHub 最新 main 复制
 ```
 
 ---
@@ -96,7 +97,7 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.2.0"
+  version: "0.4.0"
   upstream: https://github.com/ltaoo/wx_channels_download
 allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) ... Read
 ---
@@ -1099,52 +1100,40 @@ skills-ref validate ./
 
 ---
 
-## Task 8.2: 落地安装
+## Task 8.2: 落地安装 / 更新
 
 **Files:**
-- 无修改源仓库,只创建软链接
+- 无修改源仓库;从 GitHub 最新 main 复制到运行时 skill 目录
 
-- [ ] **Step 1: 实测 Claude Code 是否 resolve symlink(安装方式 a/b/c 决策)**
-
-> 若用户已经把源目录改成与 skill name 完全一致(满足规范的 hyphen 小写名),此 step 可跳过 — symlink 解析无论是否 resolve 都会找到正确的父目录名。
+- [ ] **Step 1: 从 GitHub 拉取最新 skill**
 
 ```bash
-SKILL_NAME=$(basename "$(git rev-parse --show-toplevel)")
-[ -d ~/.claude/skills ] || mkdir -p ~/.claude/skills
-
-# 建临时验证 link
-ln -sf "$(git rev-parse --show-toplevel)" ~/.claude/skills/"$SKILL_NAME"
-
-# 启新终端验证 skill 是否被 Claude Code 加载
-# (实施者跑此命令观察输出)
-echo "请在新 Claude Code session 跑:"
-echo "  claude --print 'list available skills' | grep $SKILL_NAME"
-echo "如果列出,方案 a/b 都可用;如果未列出,改用 rsync(方案 c)。"
+SKILL_NAME=wx-channels-download
+TMP="$(mktemp -d)"
+gh repo clone richardwild426/wx-channels-download "$TMP/src" -- --depth 1
+rm -rf "$TMP/src/.git"
 ```
 
 - [ ] **Step 2: 验证安装结构**
 
 ```bash
-ls -la ~/.claude/skills/"$SKILL_NAME"
-ls ~/.claude/skills/"$SKILL_NAME"/SKILL.md \
-   ~/.claude/skills/"$SKILL_NAME"/references/
+test -f "$TMP/src/SKILL.md"
+test -d "$TMP/src/references"
 ```
 
-Expected: SKILL.md 存在,references 有 6 个 .md。
+Expected: SKILL.md 存在,references 有 9 个 .md。
 
-- [ ] **Step 3: 若 symlink 不被加载(条件性):换 rsync**
+- [ ] **Step 3: 复制到运行时目录**
 
 ```bash
-rm ~/.claude/skills/"$SKILL_NAME"
-rsync -av --delete \
-  --exclude '.git' --exclude 'docs' --exclude '.gitignore' \
-  "$(git rev-parse --show-toplevel)/" \
-  ~/.claude/skills/"$SKILL_NAME"/
+mkdir -p ~/.codex/skills ~/.claude/skills
+rm -rf ~/.codex/skills/"$SKILL_NAME" ~/.claude/skills/"$SKILL_NAME"
+mkdir -p ~/.codex/skills/"$SKILL_NAME" ~/.claude/skills/"$SKILL_NAME"
+(cd "$TMP/src" && tar -cf - .) | (cd ~/.codex/skills/"$SKILL_NAME" && tar -xf -)
+(cd "$TMP/src" && tar -cf - .) | (cd ~/.claude/skills/"$SKILL_NAME" && tar -xf -)
 ```
 
-记录此事到 spec §9 #3 末尾(实测结论)。
-
-- [ ] **Step 4: 不 commit(安装动作不进 git)**
+- [ ] **Step 4: 不 commit(安装动作不进 git);开启新会话加载最新 skill**
 
 ---
 
@@ -1152,7 +1141,7 @@ rsync -av --delete \
 
 全部任务完成后:
 
-- [ ] SKILL.md + 8 个 references 都存在
+- [ ] SKILL.md + 9 个 references 都存在
 - [ ] `skills-ref validate ./` 通过(或手工核对通过)
 - [ ] 安装在 `~/.claude/skills/<skill-name>/`,`<skill-name>` 等于源目录名 + frontmatter `name`
 - [ ] git log 干净,所有 commit 消息中文 + 类型前缀
