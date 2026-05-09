@@ -12,6 +12,7 @@
 - 只从上游 release 安装 / 运行原始二进制,不替用户登录 / 装证书 / 点系统代理授权
 - 零状态,不持久化任何 SQLite / JSON / 缓存
 - 不开 WebSocket(轮询代替),不做长驻订阅
+- 本轮由 agent 启动的上游二进制必须在最终回复前停止,不留到会话退出后继续运行
 - 不重新发明分页 / 重试 / 错误兜底
 - 不翻译 `.msg`,逐字转述
 - 反复同错就停
@@ -97,7 +98,7 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.4.0"
+  version: "0.4.1"
   upstream: https://github.com/ltaoo/wx_channels_download
 allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) ... Read
 ---
@@ -134,14 +135,21 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 | 列 feed / 直播回放 / 已互动 | [`references/list-feed.md`](references/list-feed.md) |
 | 任务进度 / 暂停 / 重启 / 清空 | [`references/tasks.md`](references/tasks.md) |
 
-## 4. 通用范式
+## 4. 生命周期与资源回收
+
+- **只回收本轮启动的服务**:如果 probe 发现服务已可达,视为用户或外部系统已有服务,本 skill 不停止它。
+- **启动即登记**:如果本 skill 通过 [`references/run-binary.md`](references/run-binary.md) 启动了 `wx_video_download`,agent 必须在本轮任务结束、用户取消、报错退出或会话交付前执行对应平台的停止命令。
+- **不留长期驻留**:除非用户明确要求保留下载器服务,否则不要让 `wx_video_download` 在 agent 会话结束后继续运行。
+- **下载任务边界**:如果下载任务还在运行,先用 [`references/tasks.md`](references/tasks.md) 查询并汇报状态;未获用户明确要求继续后台下载时,仍按本文停止上游二进制。
+
+## 5. 通用范式
 
 - **分页**:`next_marker`。各 list 类 API 都返回 `.data.next_marker`,空字符串表示尾页。把上一次 `next_marker` 当下一次入参传回。
 - **重试**:不重新发明。API 自带语义,失败原样上报。
 - **进度查询**:轮询 `/api/task/profile?id=<task_id>`,2~5s 间隔。状态字段见 [`references/tasks.md`](references/tasks.md)。
 - **状态零持久化**:skill 不维护任何 sqlite / json。需要状态由 agent 用 TodoWrite 自管。
 
-## 5. 全局错误处理
+## 6. 全局错误处理
 
 ### 响应约定
 所有 API 返回 HTTP 200(网络层失败除外)。用 `.code` 判定:
@@ -161,10 +169,11 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 - 不要硬重试业务错(409/400/3001 基本不会因重试改变)
 - 不要在 skill 内"兜底",反复失败就交还用户判断
 
-## 6. 反模式
+## 7. 反模式
 
 - 不从非上游 release 来源安装 wx_video_download
 - 不替用户登录 / 装证书
+- 不把本轮由 agent 启动的 `wx_video_download` 留到会话退出后继续运行
 - 不在 skill 里持久化任何状态
 - 不开 WebSocket(轮询代替)
 - 不做长驻订阅

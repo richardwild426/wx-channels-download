@@ -4,7 +4,7 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service (default 127.0.0.1:2022) with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.4.0"
+  version: "0.4.1"
   upstream: https://github.com/ltaoo/wx_channels_download
   skill_repository: https://github.com/richardwild426/wx-channels-download
 allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(mv:*) Bash(date:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(id:*) Bash(cat:*) Bash(sleep:*) Bash(launchctl:*) Bash(systemctl:*) Bash(open:*) Bash(pwsh:*) Bash(powershell:*) Read
@@ -45,14 +45,21 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 | 列 feed / 直播回放 / 已互动 | [`references/list-feed.md`](references/list-feed.md) |
 | 任务进度 / 暂停 / 重启 / 清空 | [`references/tasks.md`](references/tasks.md) |
 
-## 4. 通用范式
+## 4. 生命周期与资源回收
+
+- **只回收本轮启动的服务**:如果 probe 发现服务已可达,视为用户或外部系统已有服务,本 skill 不停止它。
+- **启动即登记**:如果本 skill 通过 [`references/run-binary.md`](references/run-binary.md) 启动了 `wx_video_download`,agent 必须在本轮任务结束、用户取消、报错退出或会话交付前执行对应平台的停止命令。
+- **不留长期驻留**:除非用户明确要求保留下载器服务,否则不要让 `wx_video_download` 在 agent 会话结束后继续运行。
+- **下载任务边界**:如果下载任务还在运行,先用 [`references/tasks.md`](references/tasks.md) 查询并汇报状态;未获用户明确要求继续后台下载时,仍按本文停止上游二进制。
+
+## 5. 通用范式
 
 - **分页**:`next_marker`。不同 API 的游标字段名不完全一致;按对应 reference 读取 `lastBuff` / `lastBuffer`,空字符串表示尾页。
 - **重试**:不重新发明。API 自带语义,失败原样上报。
 - **进度查询**:轮询 `/api/task/list?status=all&page=1&page_size=200` 后按 `id` 过滤,2~5s 间隔。状态字段见 [`references/tasks.md`](references/tasks.md)。
 - **状态零持久化**:skill 不维护任何 sqlite / json。需要状态由 agent 用 TodoWrite 自管。
 
-## 5. 全局错误处理
+## 6. 全局错误处理
 
 ### 响应约定
 所有 API 返回 HTTP 200(网络层失败除外)。用 `.code` 判定:
@@ -72,12 +79,13 @@ export WX_SERVER=http://192.168.1.10:2022       # NAS 示例
 - 不要硬重试业务错(409/400/3001 基本不会因重试改变)
 - 不要在 skill 内"兜底",反复失败就交还用户判断
 
-## 6. 反模式
+## 7. 反模式
 
 - 不从非上游 release 来源安装 wx_video_download
 - 不从本地工作区更新 skill;用户要求更新 skill 时,始终从 `metadata.skill_repository` 的 GitHub 仓库拉取
 - 不把安装、启动、端口探测、curl、jq 这些 CLI 细节交给用户
-- 不用 `nohup ... &` 这种会被 agent 执行环境清理的方式启动长期服务
+- 不用 `nohup ... &` 这种会被 agent 执行环境清理的方式启动服务
+- 不把本轮由 agent 启动的 `wx_video_download` 留到会话退出后继续运行
 - 不替用户登录微信 PC / 手动安装证书 / 处理系统代理授权弹窗
 - 不在 skill 里持久化任何状态
 - 不开 WebSocket(轮询代替)

@@ -13,10 +13,20 @@
 3. 如果 API 不可达,按本文启动原始二进制服务。
 4. 如果 API 可达但 `channels.available == false`,提示用户完成 GUI 动作:登录微信 PC,同意证书 / 代理授权,打开或刷新任意视频号页面。
 5. probe 通过后继续用户原始任务:搜索作者、列作品、下载或批量下载。
+6. 如果第 3 步由本轮 agent 启动了服务,在任务结束、用户取消、报错退出或最终回复前执行本文"会话退出清理"。
+
+## 启动所有权
+
+只清理由本轮 agent 启动的 `wx_video_download`:
+
+- `service already reachable` 表示服务已经存在,本轮 agent 不拥有它,最终不要停止。
+- `service started` 表示本轮 agent 启动了服务,必须在最终回复前停止。
+- Windows 启动时记录 `Start-Process -PassThru` 返回的 PID;清理时只停止这个 PID,不要按进程名扫杀用户自己的进程。
+- macOS / Linux 使用固定 label / unit 托管,只有在本轮执行了启动分支后才执行对应停止命令。
 
 ## macOS: 用 launchctl 托管
 
-不要用 `nohup ... &`。在 Codex / agent 执行环境中,后台子进程可能在命令返回后被清理。macOS 使用用户级 LaunchAgent 托管进程。
+不要用 `nohup ... &`。在 Codex / agent 执行环境中,后台子进程可能在命令返回后被清理。macOS 使用用户级 LaunchAgent 托管进程,并在本轮任务结束前用 `bootout` 回收。
 
 ```bash
 #!/usr/bin/env bash
@@ -73,6 +83,7 @@ launchctl kickstart -k "gui/$UID_VALUE/$LABEL"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
     echo "service started: $SERVER"
+    echo "cleanup required: launchctl bootout gui/$UID_VALUE/$LABEL"
     exit 0
   fi
   sleep 1
@@ -82,7 +93,7 @@ echo "service process started but API is not reachable yet; log: $LOG; err: $ERR
 exit 2
 ```
 
-停止服务时由智能体执行:
+本轮启动过服务时,会话退出清理由智能体执行:
 
 ```bash
 LABEL="com.wx-channels-download.agent"
@@ -108,12 +119,13 @@ try {
 
 if (!(Test-Path $Exe)) { throw "missing binary: $Exe; run +install-binary first" }
 
-Start-Process -FilePath $Exe -WorkingDirectory $InstallDir
+$Process = Start-Process -FilePath $Exe -WorkingDirectory $InstallDir -PassThru
 
 for ($i = 0; $i -lt 10; $i++) {
   try {
     Invoke-RestMethod -Uri "$Server/api/status" -TimeoutSec 2 | Out-Null
     Write-Host "service started: $Server"
+    Write-Host "cleanup required: Stop-Process -Id $($Process.Id)"
     exit 0
   } catch {
     Start-Sleep -Seconds 1
@@ -123,9 +135,16 @@ for ($i = 0; $i -lt 10; $i++) {
 throw "service process started but API is not reachable yet"
 ```
 
+本轮启动过服务时,会话退出清理由智能体执行。`$PidFromStart` 必须来自上面启动命令输出,不要用进程名匹配:
+
+```powershell
+$PidFromStart = <pid printed by startup>
+Stop-Process -Id $PidFromStart -ErrorAction SilentlyContinue
+```
+
 ## Linux: 用 systemd 用户服务
 
-Linux 用户环境优先使用 systemd user service。无 systemd 的环境不能可靠托管长期进程;此时只提示用户需要保留程序窗口,不要输出 CLI 命令。
+Linux 用户环境优先使用 systemd user service。无 systemd 的环境不能可靠托管进程;此时只提示用户需要保留程序窗口,不要输出 CLI 命令。
 
 ```bash
 #!/usr/bin/env bash
@@ -168,6 +187,7 @@ systemctl --user restart wx-video-download.service
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   if curl -fsS --max-time 2 "$SERVER/api/status" >/dev/null 2>&1; then
     echo "service started: $SERVER"
+    echo "cleanup required: systemctl --user stop wx-video-download.service"
     exit 0
   fi
   sleep 1
@@ -176,6 +196,22 @@ done
 echo "service process started but API is not reachable yet" >&2
 exit 2
 ```
+
+本轮启动过服务时,会话退出清理由智能体执行:
+
+```bash
+systemctl --user stop wx-video-download.service >/dev/null 2>&1 || true
+```
+
+## 会话退出清理
+
+最终回复前必须按启动所有权执行一次清理:
+
+1. 如果启动命令输出 `service already reachable`,不要清理。
+2. 如果启动命令输出 `service started`,先完成用户请求,再执行对应平台的停止命令。
+3. 如果用户取消、中途报错或 GUI 介入超时,仍执行停止命令。
+4. 如果下载任务仍在运行,先查 [`tasks.md`](tasks.md) 的任务列表并在回复中说明停止会中断后台下载;除非用户明确要求保留后台下载,否则停止上游二进制。
+5. 停止后再用 `curl "${WX_SERVER:-http://127.0.0.1:2022}/api/status"` 验证不可达;如果仍可达,说明还有外部实例或端口被其他进程占用,如实报告,不要继续杀进程。
 
 ## GUI 介入点
 
