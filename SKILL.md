@@ -4,7 +4,7 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service (default 127.0.0.1:2022) with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.4.1"
+  version: "0.4.2"
   upstream: https://github.com/ltaoo/wx_channels_download
   skill_repository: https://github.com/richardwild426/wx-channels-download
 allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) Bash(uname:*) Bash(mkdir:*) Bash(tar:*) Bash(unzip:*) Bash(chmod:*) Bash(ln:*) Bash(shasum:*) Bash(sha256sum:*) Bash(mktemp:*) Bash(rm:*) Bash(mv:*) Bash(date:*) Bash(grep:*) Bash(command:*) Bash(test:*) Bash(id:*) Bash(cat:*) Bash(sleep:*) Bash(launchctl:*) Bash(systemctl:*) Bash(open:*) Bash(pwsh:*) Bash(powershell:*) Read

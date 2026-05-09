@@ -52,8 +52,9 @@
 
 **安装 / 更新目标(Task 8.2):**
 ```
-~/.codex/skills/<skill-name>/    ← 从 GitHub 最新 main 复制
-~/.claude/skills/<skill-name>/   ← 从 GitHub 最新 main 复制
+~/.agents/skills/<skill-name>/   ← canonical copy,从 GitHub 最新 main 复制
+~/.codex/skills/<skill-name>/    ← compatibility mirror,父目录存在时同步
+~/.claude/skills/<skill-name>/   ← compatibility mirror,父目录存在时同步
 ```
 
 ---
@@ -98,7 +99,7 @@ description: 下载和管理微信视频号资源的 skill,基于 wx_video_downl
 compatibility: Requires GitHub CLI for binary install, curl and jq for API calls, and a locally running wx_video_download service with WeChat PC client logged in.
 license: MIT
 metadata:
-  version: "0.4.1"
+  version: "0.4.2"
   upstream: https://github.com/ltaoo/wx_channels_download
 allowed-tools: Bash(curl:*) Bash(jq:*) Bash(gh:*) ... Read
 ---
@@ -1112,7 +1113,7 @@ skills-ref validate ./
 ## Task 8.2: 落地安装 / 更新
 
 **Files:**
-- 无修改源仓库;从 GitHub 最新 main 复制到运行时 skill 目录
+- 无修改源仓库;从 GitHub 最新 main 复制到 canonical skill 目录,再同步已存在的运行时兼容目录
 
 - [ ] **Step 1: 从 GitHub 拉取最新 skill**
 
@@ -1132,14 +1133,12 @@ test -d "$TMP/src/references"
 
 Expected: SKILL.md 存在,references 有 9 个 .md。
 
-- [ ] **Step 3: 复制到运行时目录**
+- [ ] **Step 3: 复制到 canonical 目录和运行时兼容目录**
 
 ```bash
-mkdir -p ~/.codex/skills ~/.claude/skills
-rm -rf ~/.codex/skills/"$SKILL_NAME" ~/.claude/skills/"$SKILL_NAME"
-mkdir -p ~/.codex/skills/"$SKILL_NAME" ~/.claude/skills/"$SKILL_NAME"
-(cd "$TMP/src" && tar -cf - .) | (cd ~/.codex/skills/"$SKILL_NAME" && tar -xf -)
-(cd "$TMP/src" && tar -cf - .) | (cd ~/.claude/skills/"$SKILL_NAME" && tar -xf -)
+install_one ~/.agents/skills required
+install_one ~/.codex/skills optional
+install_one ~/.claude/skills optional
 ```
 
 - [ ] **Step 4: 不 commit(安装动作不进 git);开启新会话加载最新 skill**
@@ -1152,7 +1151,7 @@ mkdir -p ~/.codex/skills/"$SKILL_NAME" ~/.claude/skills/"$SKILL_NAME"
 
 - [ ] SKILL.md + 9 个 references 都存在
 - [ ] `skills-ref validate ./` 通过(或手工核对通过)
-- [ ] 安装在 `~/.claude/skills/<skill-name>/`,`<skill-name>` 等于源目录名 + frontmatter `name`
+- [ ] 安装在 `~/.agents/skills/<skill-name>/`,`<skill-name>` 等于源目录名 + frontmatter `name`
 - [ ] git log 干净,所有 commit 消息中文 + 类型前缀
 - [ ] **所有 reference 文件中不残留 `实施期 TODO` / `待确认` / `TBD` / `TODO` 字样**
 - [ ] 抽样 grep 验证:`grep -rn "实施期 TODO\|待确认\|TBD" SKILL.md references/` 无匹配

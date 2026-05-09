@@ -6,7 +6,7 @@
 
 ## macOS / Linux
 
-把 GitHub 最新 `main` 克隆到临时目录,再原子替换运行时 skill 目录。默认同时更新 Codex 和 Claude 两个常见安装位置;不存在的父目录会跳过。
+把 GitHub 最新 `main` 克隆到临时目录,再原子替换 skill 目录。默认把 `$AGENTS_HOME/skills` 作为 canonical 安装位置(`AGENTS_HOME` 未设时为 `$HOME/.agents`),并在 Codex / Claude 两个常见运行时目录存在时同步兼容副本。
 
 ```bash
 #!/usr/bin/env bash
@@ -14,6 +14,7 @@ set -euo pipefail
 
 REPO="${WX_SKILL_REPO:-richardwild426/wx-channels-download}"
 SKILL_NAME="wx-channels-download"
+AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -22,7 +23,12 @@ rm -rf "$TMP/src/.git"
 
 install_one() {
   parent="$1"
-  [ -d "$parent" ] || return 0
+  mode="${2:-optional}"
+  if [ "$mode" = "required" ]; then
+    mkdir -p "$parent"
+  elif [ ! -d "$parent" ]; then
+    return 0
+  fi
   target="$parent/$SKILL_NAME"
   staging="$parent/.$SKILL_NAME.tmp"
   backup="$parent/.$SKILL_NAME.backup.$(date +%Y%m%d%H%M%S)"
@@ -38,6 +44,7 @@ install_one() {
   echo "updated: $target"
 }
 
+install_one "$AGENTS_HOME/skills" required
 install_one "$HOME/.codex/skills"
 install_one "$HOME/.claude/skills"
 ```
@@ -51,14 +58,19 @@ $ErrorActionPreference = "Stop"
 
 $Repo = if ($env:WX_SKILL_REPO) { $env:WX_SKILL_REPO } else { "richardwild426/wx-channels-download" }
 $SkillName = "wx-channels-download"
+$AgentsHome = if ($env:AGENTS_HOME) { $env:AGENTS_HOME } else { Join-Path $env:USERPROFILE ".agents" }
 $Tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("wx-skill-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
 
 gh repo clone $Repo (Join-Path $Tmp "src") -- --depth 1
 Remove-Item -Recurse -Force (Join-Path $Tmp "src\.git") -ErrorAction SilentlyContinue
 
-function Install-One($Parent) {
-  if (!(Test-Path $Parent)) { return }
+function Install-One($Parent, [bool]$Required = $false) {
+  if ($Required) {
+    New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+  } elseif (!(Test-Path $Parent)) {
+    return
+  }
   $Target = Join-Path $Parent $SkillName
   $Staging = Join-Path $Parent ".$SkillName.tmp"
   $Backup = Join-Path $Parent ".$SkillName.backup.$(Get-Date -Format yyyyMMddHHmmss)"
@@ -74,6 +86,7 @@ function Install-One($Parent) {
   Write-Host "updated: $Target"
 }
 
+Install-One (Join-Path $AgentsHome "skills") $true
 Install-One (Join-Path $env:USERPROFILE ".codex\skills")
 Install-One (Join-Path $env:USERPROFILE ".claude\skills")
 Remove-Item -Recurse -Force $Tmp
@@ -82,7 +95,9 @@ Remove-Item -Recurse -Force $Tmp
 ## 更新后验证
 
 ```bash
+AGENTS_HOME="${AGENTS_HOME:-$HOME/.agents}"
 grep -n 'skill_repository: https://github.com/richardwild426/wx-channels-download' \
+  "$AGENTS_HOME/skills/wx-channels-download/SKILL.md" \
   "$HOME/.codex/skills/wx-channels-download/SKILL.md" \
   "$HOME/.claude/skills/wx-channels-download/SKILL.md" 2>/dev/null || true
 ```
