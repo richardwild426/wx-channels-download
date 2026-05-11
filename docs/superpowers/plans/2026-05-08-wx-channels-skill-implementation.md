@@ -52,9 +52,7 @@
 
 **安装 / 更新目标(Task 8.2):**
 ```
-~/.agents/skills/<skill-name>/   ← canonical copy,从 GitHub 最新 main 复制
-~/.codex/skills/<skill-name>/    ← legacy copy,默认移到备份;仅 WX_SYNC_RUNTIME_SKILLS=1 时同步
-~/.claude/skills/<skill-name>/   ← legacy copy,默认移到备份;仅 WX_SYNC_RUNTIME_SKILLS=1 时同步
+<agent-resolved-skill-dir>/<skill-name>/   ← 由当前智能体自己的 skill 安装机制决定
 ```
 
 ---
@@ -1113,7 +1111,7 @@ skills-ref validate ./
 ## Task 8.2: 落地安装 / 更新
 
 **Files:**
-- 无修改源仓库;从 GitHub 最新 main 复制到 canonical skill 目录。运行时兼容目录默认不同步,已有旧副本移到同级备份目录;只有显式设置 `WX_SYNC_RUNTIME_SKILLS=1` 时同步。
+- 无修改源仓库;从 GitHub 最新 main 拉取。目标目录由当前智能体自己的 skill 安装机制决定,更新时直接替换目标 skill 目录,不保留旧副本。
 
 - [ ] **Step 1: 从 GitHub 拉取最新 skill**
 
@@ -1133,12 +1131,11 @@ test -d "$TMP/src/references"
 
 Expected: SKILL.md 存在,references 有 9 个 .md。
 
-- [ ] **Step 3: 复制到 canonical 目录**
+- [ ] **Step 3: 交给当前智能体的 skill 安装机制落地**
 
 ```bash
-install_one ~/.agents/skills required
-# 默认 retire ~/.codex/skills 和 ~/.claude/skills 中的旧副本
-# WX_SYNC_RUNTIME_SKILLS=1 时才同步这些运行时专用目录
+# 目标目录必须由当前智能体运行时解析,不要在本 skill 中写死统一目录。
+# 若运行时没有专用安装命令,把解析出的目标目录传给 references/update-skill.md 的 WX_SKILL_INSTALL_DIR。
 ```
 
 - [ ] **Step 4: 不 commit(安装动作不进 git);开启新会话加载最新 skill**
@@ -1151,7 +1148,7 @@ install_one ~/.agents/skills required
 
 - [ ] SKILL.md + 9 个 references 都存在
 - [ ] `skills-ref validate ./` 通过(或手工核对通过)
-- [ ] 安装在 `~/.agents/skills/<skill-name>/`,`<skill-name>` 等于源目录名 + frontmatter `name`
+- [ ] 安装位置由当前智能体的 skill 安装机制决定,`<skill-name>` 等于源目录名 + frontmatter `name`
 - [ ] git log 干净,所有 commit 消息中文 + 类型前缀
 - [ ] **所有 reference 文件中不残留 `实施期 TODO` / `待确认` / `TBD` / `TODO` 字样**
 - [ ] 抽样 grep 验证:`grep -rn "实施期 TODO\|待确认\|TBD" SKILL.md references/` 无匹配
